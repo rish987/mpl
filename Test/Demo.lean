@@ -124,6 +124,7 @@ theorem mkFreshPair_spec :
   ⦃⇓ (a, b) => ⌜a ≠ b⌝⦄ := by
   unfold mkFreshPair
   mintro - ∀s
+  mspec_no_bind Specs.bind
   mspec mkFreshNat_spec
   mintro ∀s
   mcases h with ⌜h₁⌝

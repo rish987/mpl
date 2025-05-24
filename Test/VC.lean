@@ -11,7 +11,7 @@ theorem fib_triple : ⦃⌜True⌝⦄ fib_impl n ⦃⇓ r => r = fib_spec n⦄ :
   mvcgen
   case inv => exact ⇓ (⟨a, b⟩, xs) =>
     a = fib_spec xs.rpref.length ∧ b = fib_spec (xs.rpref.length + 1)
-  all_goals simp_all +zetaDelta [Nat.sub_one_add_one]
+  all_goals simp_all [Nat.sub_one_add_one]
 
 theorem fib_triple_step : ⦃⌜True⌝⦄ fib_impl n ⦃⇓ r => r = fib_spec n⦄ := by
   unfold fib_impl

@@ -42,11 +42,13 @@ inductive PostShape : Type 1 where
   | pure : PostShape
   | arg : (σ : Type) → PostShape → PostShape
   | except : (ε : Type) → PostShape → PostShape
+  | option : PostShape → PostShape
 
 abbrev PostShape.args : PostShape → List Type
   | .pure => []
   | .arg σ s => σ :: PostShape.args s
   | .except _ s => PostShape.args s
+  | .option s => PostShape.args s
 
 /--
   An assertion on the `.arg`s in the given predicate shape.
@@ -68,18 +70,22 @@ abbrev Assertion (ps : PostShape) : Type :=
   example : FailConds (.except ε .pure) = ((ε → Prop) × Unit) := rfl
   example : FailConds (.arg σ (.except ε .pure)) = ((ε → Prop) × Unit) := rfl
   example : FailConds (.except ε (.arg σ .pure)) = ((ε → σ → Prop) × Unit) := rfl
+  example : FailConds (.arg σ (.option .pure)) = (Prop × Unit) := rfl
+  example : FailConds (.option (.arg σ .pure)) = ((σ → Prop) × Unit) := rfl
   ```
 -/
 def FailConds : PostShape → Type
   | .pure => Unit
   | .arg _ ps => FailConds ps
   | .except ε ps => (ε → Assertion ps) × FailConds ps
+  | .option ps => (Assertion ps) × FailConds ps
 
 @[simp]
 def FailConds.const {ps : PostShape} (p : Prop) : FailConds ps := match ps with
   | .pure => ()
   | .arg _ ps => @FailConds.const ps p
   | .except _ ps => (fun _ε => spred(⌜p⌝), @FailConds.const ps p)
+  | .option ps => (spred(⌜p⌝), @FailConds.const ps p)
 
 @[simp]
 def FailConds.true : FailConds ps := FailConds.const True
@@ -95,6 +101,7 @@ def FailConds.entails {ps : PostShape} (x y : FailConds ps) : Prop :=
   | .pure => True
   | .arg _ ps => @entails ps x y
   | .except _ ps => (∀ e, x.1 e ⊢ₛ y.1 e) ∧ @entails ps x.2 y.2
+  | .option ps => (x.1 ⊢ₛ y.1) ∧ @entails ps x.2 y.2
 
 infixr:25 " ⊢ₑ " => FailConds.entails
 
@@ -109,6 +116,7 @@ theorem FailConds.entails.trans {ps : PostShape} {x y z : FailConds ps} : (x ⊢
   case pure => intro _ _; trivial
   case arg σ s ih => exact ih
   case except ε s ih => intro h₁ h₂; exact ⟨fun e => (h₁.1 e).trans (h₂.1 e), ih h₁.2 h₂.2⟩
+  case option s ih => intro h₁ h₂; exact ⟨h₁.1.trans h₂.1, ih h₁.2 h₂.2⟩
 
 @[simp]
 theorem FailConds.pure_def {x : FailConds .pure} : x = () := rfl
@@ -127,38 +135,45 @@ def FailConds.and {ps : PostShape} (x : FailConds ps) (y : FailConds ps) : FailC
   | .pure => ()
   | .arg _ ps => @FailConds.and ps x y
   | .except _ _ => (fun e => SPred.and (x.1 e) (y.1 e), FailConds.and x.2 y.2)
+  | .option _ => (SPred.and x.1 y.1, FailConds.and x.2 y.2)
 
 infixr:35 " ∧ₑ " => FailConds.and
 
 theorem FailConds.and_true {x : FailConds ps} : x ∧ₑ FailConds.true ⊢ₑ x := by
-  induction ps
-  case pure => trivial
-  case arg ih => exact ih
-  case except ε ps ih =>
+  induction ps with
+  | pure => trivial
+  | arg _ _ ih => exact ih
+  | except _ _ ih =>
+    simp_all[and, true, const]
+    constructor <;> simp only [SPred.and_true.mp, implies_true, ih]
+  | option _ ih =>
     simp_all[and, true, const]
     constructor <;> simp only [SPred.and_true.mp, implies_true, ih]
 
 theorem FailConds.true_and {x : FailConds ps} : FailConds.true ∧ₑ x ⊢ₑ x := by
-  induction ps
-  case pure => trivial
-  case arg ih => exact ih
-  case except ε ps ih =>
+  induction ps with
+  | pure => trivial
+  | arg _ _ ih => exact ih
+  | except _ _ ih
+  | option _ ih =>
     simp_all[and, true, const]
     constructor <;> simp only [SPred.true_and.mp, implies_true, ih]
 
 theorem FailConds.and_false {x : FailConds ps} : x ∧ₑ FailConds.false ⊢ₑ FailConds.false := by
-  induction ps
-  case pure => trivial
-  case arg ih => exact ih
-  case except ε ps ih =>
+  induction ps with
+  | pure => trivial
+  | arg _ _ ih => exact ih
+  | except _ _ ih
+  | option _ ih =>
     simp_all[and, false, const]
     constructor <;> simp only [SPred.and_false.mp, implies_true, ih]
 
 theorem FailConds.false_and {x : FailConds ps} : FailConds.false ∧ₑ x ⊢ₑ FailConds.false := by
-  induction ps
-  case pure => trivial
-  case arg ih => exact ih
-  case except ε ps ih =>
+  induction ps with
+  | pure => trivial
+  | arg _ _ ih => exact ih
+  | except _ _ ih
+  | option _ ih =>
     simp_all[and, false, const]
     constructor <;> simp only [SPred.false_and.mp, implies_true, ih]
 
@@ -171,6 +186,11 @@ theorem FailConds.and_eq_left {ps : PostShape} {p q : FailConds ps} (h : p ⊢�
     simp_all[and, const]
     apply Prod.ext
     · ext a; exact (SPred.and_eq_left.mp (h.1 a)).to_eq
+    · exact ih h.2
+  case option _ ih =>
+    simp_all[and, const]
+    apply Prod.ext
+    · exact (SPred.and_eq_left.mp h.1).to_eq
     · exact ih h.2
 
 /--
