@@ -31,8 +31,8 @@ variable
 #guard_msgs in
 #check (⌜φ⌝ : SPred [Nat,Char,Bool])
 
-/-- info: ⌜7 + ‹Nat›ₛ = if ‹Bool›ₛ = true then 13 else 7⌝ : SVal [Nat, Char, Bool] Prop -/
-#guard_msgs in
+-- /-- info: ⌜7 + ‹Nat›ₛ = if ‹Bool›ₛ = true then 13 else 7⌝ : SVal [Nat, Char, Bool] Prop -/
+-- #guard_msgs in
 #check (⌜7 + ‹Nat›ₛ = if ‹Bool›ₛ then 13 else 7⌝ : SPred [Nat,Char,Bool])
 
 private abbrev theChar : SVal [Nat,Char,Bool] Char := fun _ c _ => c

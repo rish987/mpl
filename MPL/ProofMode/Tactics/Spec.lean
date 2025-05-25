@@ -154,7 +154,7 @@ def mSpec (goal : MGoal) (elabSpecAtWP : Expr → n (SpecTheorem × List MVarId)
   let (specThm, elabMVars) ← elabSpecAtWP wp
 
   -- The precondition of `specThm` might look like `⌜?n = ‹Nat›ₛ ∧ ?m = ‹Bool›ₛ⌝`, which expands to
-  -- `SVal.curry (fun tuple => ?n = SVal.uncurry (getThe Nat tuple) ∧ ?m = SVal.uncurry (getThe Bool tuple))`.
+  -- `SVal.curry (fun tuple => ?n = SVal.uncurry (getThe Nat) tuple ∧ ?m = SVal.uncurry (getThe Bool) tuple)`.
   -- Note that the assignments for `?n` and `?m` depend on the bound variable `tuple`.
   -- Here, we further eta expand and simplify according to `etaPotential` so that the solutions for
   -- `?n` and `?m` do not depend on `tuple`.
