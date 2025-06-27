@@ -203,6 +203,7 @@ where
     emitVC goal.toExpr name
 
   tryGoal (goal : Expr) (name : Name) : VCGenM Expr := do
+    trace[mpl.tactics.vcgen] s!"tryGoal ({name}) {← ppExpr goal}"
     forallTelescope goal fun xs body => do
       let res ← try mStart body catch _ =>
         return ← mkLambdaFVars xs (← emitVC goal name)
@@ -214,6 +215,7 @@ where
       mkLambdaFVars xs prf
 
   assignMVars (mvars : List MVarId) : VCGenM PUnit := do
+    trace[mpl.tactics.vcgen] s!"assignMVars ({← mvars.mapM (fun mv => do pure (← mv.getTag))})"
     for mvar in mvars do
       -- trace[mpl.tactics.vcgen] "assignMVars {← mvar.getTag}, assigned: {← mvar.isAssigned}"
       if ← mvar.isAssigned then continue
@@ -234,7 +236,8 @@ where
     if f.isConstOf ``SPred.imp then
       return ← onImp goal name
     else if f.isConstOf ``PredTrans.apply then
-      return ← onWPApp goal name
+      return ← onWPApp goal name 6
+    let T ← instantiateMVars T
     onFail { goal with target := T } name
 
   onImp goal name : VCGenM Expr := ifOutOfFuel (onFail goal name) do
@@ -247,7 +250,8 @@ where
     (·.2) <$> mIntroForall goal (← `(binderIdent| _)) (fun g =>
         do return ((), ← onGoal g name))
 
-  onWPApp goal name : VCGenM Expr := ifOutOfFuel (onFail goal name) do
+  onWPApp goal name n : VCGenM Expr := ifOutOfFuel (onFail goal name) do
+    trace[mpl.tactics.vcgen] s!"onWpApp {n}"
     let args := goal.target.getAppArgs
     let trans := args[2]!
     -- logInfo m!"trans: {trans}"
@@ -271,7 +275,7 @@ where
         burnOne
         return ← withSharing x ty val fun fv leave => do
         let e' := ((body.instantiate1 fv).betaRev e.getAppRevArgs)
-        leave (← onWPApp (goalWithNewProg e') name)
+        leave (← onWPApp (goalWithNewProg e') name 5)
       -- match-expressions
       if let .some info := isMatcherAppCore? (← getEnv) e then
         -- Bring into simp NF
@@ -280,7 +284,7 @@ where
           if let .some res := res? then
             burnOne
             if let .some heq := res.proof? then
-              let prf ← onWPApp (goalWithNewProg res.expr) name
+              let prf ← onWPApp (goalWithNewProg res.expr) name 4
               let prf := mkApp10 (mkConst ``rewrite_program wp.constLevels!) m ps α goal.hyps Q instWP e res.expr heq prf
               return prf
             else
@@ -291,7 +295,7 @@ where
         let e ← match (← reduceMatcher? e) with
           | .reduced e' =>
           burnOne
-          return ← onWPApp (goalWithNewProg e') name
+          return ← onWPApp (goalWithNewProg e') name 3
           | .stuck _ => pure e
           | _ => pure e
         -- Last resort: Split match
@@ -301,13 +305,14 @@ where
         let mvars ← Split.splitMatch mvar.mvarId! e
         assignMVars mvars
         return mvar
+
       -- Unfold local bindings (TODO don't do this unconditionally)
       let f := e.getAppFn'
       if let some (some val) ← f.fvarId?.mapM (·.getValue?) then
         burnOne
         let e' := val.betaRev e.getAppRevArgs
         -- logInfo m!"unfold local var {f}, new WP: {wpe}"
-        return ← onWPApp (goalWithNewProg e') name
+        return ← onWPApp (goalWithNewProg e') name 2
       -- Unfold definitions according to reducibility and spec attributes,
       -- apply specifications
       if f.isConst then
@@ -325,11 +330,11 @@ where
         burnOne
         if let .some heq := res.proof? then
           trace[mpl.tactics.vcgen] "Simplified"
-          let prf ← onWPApp (goalWithNewProg res.expr) name
+          let prf ← onWPApp (goalWithNewProg res.expr) name 1
           let prf := mkApp10 (mkConst ``rewrite_program wp.constLevels!) m ps α goal.hyps Q instWP e res.expr heq prf
           return prf
         else
-          return ← onWPApp (goalWithNewProg res.expr) name
+          return ← onWPApp (goalWithNewProg res.expr) name 0
       return ← onFail goal name
     | _ => return ← onFail goal name
 

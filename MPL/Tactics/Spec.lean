@@ -79,7 +79,7 @@ def elabSpec (stx? : Option (TSyntax `term)) (wp : Expr) : TacticM (SpecTheorem 
   | none => pure (← findSpec (← getSpecTheorems) prog, [])
   | some stx => Term.withSynthesize (elabTermIntoSpecTheorem stx expectedTy)
 
-variable {n} [Monad n] [MonadControlT MetaM n] [MonadLiftT MetaM n]
+variable {n} [Monad n] [MonadControlT MetaM n] [MonadLiftT MetaM n] [MonadTrace n] [MonadOptions n] [MonadRef n] [AddMessageContext n] [MonadMCtx n]
 
 mutual
 partial def dischargePostEntails (α : Expr) (ps : Expr) (Q : Expr) (Q' : Expr) (goalTag : Name) (resultName : Name) (discharge : Expr → Name → n Expr) : n Expr := do
