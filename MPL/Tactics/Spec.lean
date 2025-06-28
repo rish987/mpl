@@ -133,7 +133,8 @@ end
 def dischargeMGoal (goal : MGoal) (goalTag : Name) (discharge : Expr → Name → n Expr) : n Expr := do
   -- controlAt MetaM (fun map => do trace[mpl.tactics.spec] "dischargeMGoal: {(← reduceProj? goal.target).getD goal.target}"; map (pure ()))
   -- simply try one of the assumptions for now. Later on we might want to decompose conjunctions etc; full xsimpl
-  let some prf ← liftMetaM goal.assumption | discharge goal.toExpr goalTag
+  let some prf ← liftMetaM goal.assumption |
+    discharge goal.toExpr goalTag
   return prf
 
 def mkPreTag (goalTag : Name) : Name := Id.run do
@@ -172,27 +173,60 @@ def mSpec (goal : MGoal) (elabSpecAtWP : Expr → n (SpecTheorem × List MVarId)
     let (schematicMVars, _, spec, specTy) ← specThm.proof.instantiate
 
     -- Apply the spec to the excess arguments of the `wp⟦e⟧ Q` application
-    let T := goal.target.consumeMData
-    let args := T.getAppArgs
+    let args := goal.target.consumeMData.getAppArgs
+    let excessArgs := (args.extract 4 args.size)
+    let rexcessArgs := excessArgs.reverse
+
+    let getConstTrans (P Q : Expr) : n ((Expr × Expr × Expr) × (Expr → Expr) × (Expr → Expr)) := do
+      let mut σs := goal.σs
+      let mut P := P
+      let mut Q := Q
+      let mut toConst : Expr → Expr := id
+      let mut fromConst : Expr → Expr := id
+      for arg in rexcessArgs do
+        let argType ← inferType arg
+        let argLvl ← getLevel argType
+
+        toConst := fun e => (mkApp5 (mkConst ``SPred.entails.to_const []) σs P Q argType (toConst e))
+        fromConst := fun e => fromConst (mkApp6 (mkConst ``SPred.entails.from_const []) σs P Q argType arg e)
+        P := mkLambda default default argType P
+        Q := mkLambda default default argType Q
+        σs := mkApp3 (mkConst ``List.cons [argLvl]) (.sort argLvl) argType σs
+      pure ((σs, P, Q), toConst, fromConst)
+
+    let_expr f@Triple m ps instWP α prog P Q := specTy | do liftMetaM (throwError "target not a Triple application {specTy}")
+
+    let ((σs, hyps, target), _, prePrePrf) ← getConstTrans goal.hyps goal.target
+    let hyps :=
+      if let some ⟨name, uniq, _⟩ := parseHyp? goal.hyps then
+        .mdata ⟨[(nameAnnotation, .ofName name), (uniqAnnotation, .ofName uniq)]⟩ hyps
+      else hyps
+    let goal : MGoal := {σs, hyps, target}
+
+    let mut spec := spec.betaRev rexcessArgs
+    let mut specPre := P.betaRev rexcessArgs
+    let mut specPost := mkApp4 (mkConst ``PredTrans.apply []) ps α (mkApp5 (mkConst ``WP.wp f.constLevels!) m ps instWP α prog) Q
+    specPost := specPost.betaRev rexcessArgs
+    let ((_, newSpecPre, newSpecPost), specToConst, _) ← getConstTrans specPre specPost
+    spec := specToConst spec
+    specPre := newSpecPre
+    specPost := newSpecPost
+
     let Q' := args[3]!
-    let excessArgs := (args.extract 4 args.size).reverse
 
     -- Actually instantiate the specThm using the expected type computed from `wp`.
-    let_expr f@Triple m ps instWP α prog P Q := specTy | do liftMetaM (throwError "target not a Triple application {specTy}")
     let wp' := mkApp5 (mkConst ``WP.wp f.constLevels!) m ps instWP α prog
     unless (← withAssignableSyntheticOpaque <| isDefEq wp wp') do
       Term.throwTypeMismatchError none wp wp' spec
 
-    let P := P.betaRev excessArgs
-    let spec := spec.betaRev excessArgs
-
     -- often P or Q are schematic (i.e. an MVar app). Try to solve by rfl.
     let P ← instantiateMVarsIfMVarApp P
     let Q ← instantiateMVarsIfMVarApp Q
-    let (HPRfl, QQ'Rfl) ← withConfig (fun c => {c with constApprox := true}) do
+    let (HPRfl, QQ'Rfl) ← do
       let HPRfl ← withDefault <| withAssignableSyntheticOpaque <| isDefEqGuarded P goal.hyps
       let QQ'Rfl ← withDefault <| withAssignableSyntheticOpaque <| isDefEqGuarded Q Q'
       pure (HPRfl, QQ'Rfl)
+    dbg_trace s!"DBG[17]: Spec.lean:211: (HPRfl, QQ'Rfl)={(HPRfl, QQ'Rfl)}"
 
     -- Discharge the validity proof for the spec if not rfl
     let mut prePrf : Expr → Expr := id
@@ -200,8 +234,8 @@ def mSpec (goal : MGoal) (elabSpecAtWP : Expr → n (SpecTheorem × List MVarId)
       -- let P := (← reduceProjBeta? P).getD P
       -- Try to avoid creating a longer name if the postcondition does not need to create a goal
       let tag := if !QQ'Rfl then mkPreTag goalTag else goalTag
-      let HPPrf ← dischargeMGoal { goal with target := P } tag discharge
-      prePrf := mkApp6 (mkConst ``SPred.entails.trans) goal.σs goal.hyps P goal.target HPPrf
+      let HPPrf ← dischargeMGoal { goal with target := specPre } tag discharge
+      prePrf := mkApp6 (mkConst ``SPred.entails.trans) goal.σs goal.hyps specPre goal.target HPPrf
 
     -- Discharge the entailment on postconditions if not rfl
     let mut postPrf : Expr → Expr := id
@@ -212,12 +246,16 @@ def mSpec (goal : MGoal) (elabSpecAtWP : Expr → n (SpecTheorem × List MVarId)
       let wpApplyQ' := mkApp4 (mkConst ``PredTrans.apply) ps α wp Q' -- wp⟦x⟧.apply Q'
       let QQ' ← dischargePostEntails α ps Q Q' tag resultName discharge
       let QQ'mono := mkApp6 (mkConst ``PredTrans.mono) ps α wp Q Q' QQ'
+      let ((_, cwpApplyQ, cwpApplyQ'), toConst, _) ← getConstTrans (wpApplyQ.betaRev rexcessArgs) (wpApplyQ'.betaRev rexcessArgs)
+      let cQQ'mono := toConst (QQ'mono.betaRev rexcessArgs)
       postPrf := fun h =>
-        mkApp6 (mkConst ``SPred.entails.trans) goal.σs P (wpApplyQ.betaRev excessArgs) (wpApplyQ'.betaRev excessArgs)
-          h (QQ'mono.betaRev excessArgs)
+        mkApp6 (mkConst ``SPred.entails.trans) goal.σs specPre cwpApplyQ cwpApplyQ'
+          h cQQ'mono
 
     -- finally build the proof; HPPrf.trans (spec.trans QQ'mono)
-    let prf := prePrf (postPrf spec)
+    let prf := prePrePrf (prePrf (postPrf spec))
+    -- if rexcessArgs.size > 0 then
+    --   dbg_trace s!"DBG[10]: Spec.lean:234: {rexcessArgs.size} prf={← ppExpr prf}"
     let holes := elabMVars ++ schematicMVars.toList.map (·.mvarId!)
     let holes ← liftMetaM <| holes.filterM fun mv => not <$> mv.isAssignedOrDelayedAssigned
     return (holes, prf)

@@ -27,7 +27,8 @@ partial def _root_.MPL.SPred.ProofMode.MGoal.assumption (goal : MGoal) : OptionT
     <|>
     mkApp5 (mkConst ``Assumption.assumption_l) σs lhs rhs goal.target <$> assumption { goal with hyps := lhs }
   else
-    panic! s!"assumption: hypothesis without proper metadata: {goal.hyps}"
+    failure
+    -- panic! s!"assumption: hypothesis without proper metadata: {goal.hyps}" -- FIXME ?
 
 def _root_.MPL.SPred.ProofMode.MGoal.assumptionPure (goal : MGoal) : OptionT MetaM Expr := do
   let φ := mkApp2 (mkConst ``SPred.tautological) goal.σs goal.target

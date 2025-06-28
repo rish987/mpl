@@ -45,6 +45,18 @@ theorem and_or_elim_l (hleft : P ∧ R ⊢ₛ T) (hright : Q ∧ R ⊢ₛ T) : (
 theorem and_or_elim_r (hleft : P ∧ Q ⊢ₛ T) (hright : P ∧ R ⊢ₛ T) : P ∧ (Q ∨ R) ⊢ₛ T := imp_elim' (or_elim (imp_intro (and_symm.trans hleft)) (imp_intro (and_symm.trans hright)))
 theorem exfalso (h : P ⊢ₛ ⌜False⌝) : P ⊢ₛ Q := h.trans false_elim
 
+theorem entails.from_const (s : S)
+   -- FIXME want to use entails notation here -- why can't we infer `σs`?
+   (h : SPred.entails (σs := S :: σs) spred(fun _ => P) spred(fun _ => Q))
+   : P ⊢ₛ Q := by
+  have := h s
+  induction σs <;> simp_all
+
+theorem entails.to_const
+   -- FIXME want to use entails notation here -- why can't we infer `σs`?
+   (h : P ⊢ₛ Q)
+   : SPred.entails (σs := S :: σs) spred(fun _ => P) spred(fun _ => Q) := fun _ => h
+
 /-! # Monotonicity and congruence -/
 
 theorem and_mono (hp : P ⊢ₛ P') (hq : Q ⊢ₛ Q') : P ∧ Q ⊢ₛ P' ∧ Q' := and_intro (and_elim_l' hp) (and_elim_r' hq)

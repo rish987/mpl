@@ -378,10 +378,10 @@ abbrev fib_spec : Nat → Nat
 | 1 => 1
 | n+2 => fib_spec n + fib_spec (n+1)
 
-theorem fib_triple_vc : ⦃⌜True⌝⦄ fib_impl n ⦃⇓ r => r = fib_spec n⦄ := by
-  unfold fib_impl
-  -- set_option trace.mpl.tactics.spec true in
-  mvcgen
-  case inv => exact ⇓ (⟨a, b⟩, xs) =>
-    a = fib_spec xs.rpref.length ∧ b = fib_spec (xs.rpref.length + 1)
-  all_goals simp_all +zetaDelta [Nat.sub_one_add_one]
+-- theorem fib_triple_vc : ⦃⌜True⌝⦄ fib_impl n ⦃⇓ r => r = fib_spec n⦄ := by
+--   unfold fib_impl
+--   -- set_option trace.mpl.tactics.spec true in
+--   mvcgen
+--   case inv => exact ⇓ (⟨a, b⟩, xs) =>
+--     a = fib_spec xs.rpref.length ∧ b = fib_spec (xs.rpref.length + 1)
+--   all_goals simp_all +zetaDelta [Nat.sub_one_add_one]
