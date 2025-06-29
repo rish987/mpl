@@ -184,16 +184,34 @@ def mSpec (goal : MGoal) (elabSpecAtWP : Expr → n (SpecTheorem × List MVarId)
     unless (← withAssignableSyntheticOpaque <| isDefEq wp wp') do
       Term.throwTypeMismatchError none wp wp' spec
 
-    let P := P.betaRev excessArgs
     let spec := spec.betaRev excessArgs
 
     -- often P or Q are schematic (i.e. an MVar app). Try to solve by rfl.
-    let P ← instantiateMVarsIfMVarApp P
     let Q ← instantiateMVarsIfMVarApp Q
-    let hypsFn ← forallBoundedTelescope (← inferType P) (.some excessArgs.size) fun xs _ => do
+
+    -- -- often P or Q are schematic (i.e. an MVar app). Try to solve by rfl.
+    -- let Q ← instantiateMVarsIfMVarApp Q
+    --
+    -- let PType ← inferType P
+    -- let mkConstFn (e : Expr) := forallBoundedTelescope PType (.some excessArgs.size) fun xs _ => do
+    --   mkLambdaFVars xs e
+    -- let constHyps ← mkConstFn goal.hyps
+    -- let constQ' ← withLocalDecl default default α fun a => do
+    --   let Q'a := mkApp Q' a |>.betaRev excessArgs
+    --   mkLambdaFVars #[a] (← mkConstFn Q'a)
+    -- let HPRfl ← withDefault <| withAssignableSyntheticOpaque <| isDefEqGuarded P constHyps
+    -- let QQ'Rfl ← withDefault <| withAssignableSyntheticOpaque <| isDefEqGuarded Q constQ'
+    --
+    -- let P := P.betaRev excessArgs
+    -- let P ← instantiateMVarsIfMVarApp P
+
+    let constHyps ← forallBoundedTelescope (← inferType P) (.some excessArgs.size) fun xs _ => do
       mkLambdaFVars xs goal.hyps
-    let HPRfl ← withDefault <| withAssignableSyntheticOpaque <| isDefEqGuarded P hypsFn
+    let HPRfl ← withDefault <| withAssignableSyntheticOpaque <| isDefEqGuarded P constHyps
     let QQ'Rfl ← withDefault <| withAssignableSyntheticOpaque <| isDefEqGuarded Q Q'
+
+    let P := P.betaRev excessArgs
+    let P ← instantiateMVarsIfMVarApp P
 
     -- Discharge the validity proof for the spec if not rfl
     let mut prePrf : Expr → Expr := id
