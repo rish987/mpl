@@ -133,7 +133,8 @@ end
 def dischargeMGoal (goal : MGoal) (goalTag : Name) (discharge : Expr → Name → n Expr) : n Expr := do
   -- controlAt MetaM (fun map => do trace[mpl.tactics.spec] "dischargeMGoal: {(← reduceProj? goal.target).getD goal.target}"; map (pure ()))
   -- simply try one of the assumptions for now. Later on we might want to decompose conjunctions etc; full xsimpl
-  let some prf ← liftMetaM goal.assumption | discharge goal.toExpr goalTag
+  let some prf ← liftMetaM goal.assumption |
+    discharge goal.toExpr goalTag
   return prf
 
 def mkPreTag (goalTag : Name) : Name := Id.run do
@@ -189,10 +190,10 @@ def mSpec (goal : MGoal) (elabSpecAtWP : Expr → n (SpecTheorem × List MVarId)
     -- often P or Q are schematic (i.e. an MVar app). Try to solve by rfl.
     let P ← instantiateMVarsIfMVarApp P
     let Q ← instantiateMVarsIfMVarApp Q
-    let (HPRfl, QQ'Rfl) ← withConfig (fun c => {c with constApprox := true}) do
-      let HPRfl ← withDefault <| withAssignableSyntheticOpaque <| isDefEqGuarded P goal.hyps
-      let QQ'Rfl ← withDefault <| withAssignableSyntheticOpaque <| isDefEqGuarded Q Q'
-      pure (HPRfl, QQ'Rfl)
+    let hypsFn ← forallBoundedTelescope (← inferType P) (.some excessArgs.size) fun xs _ => do
+      mkLambdaFVars xs goal.hyps
+    let HPRfl ← withDefault <| withAssignableSyntheticOpaque <| isDefEqGuarded P hypsFn
+    let QQ'Rfl ← withDefault <| withAssignableSyntheticOpaque <| isDefEqGuarded Q Q'
 
     -- Discharge the validity proof for the spec if not rfl
     let mut prePrf : Expr → Expr := id

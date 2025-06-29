@@ -19,6 +19,7 @@ partial def _root_.MPL.SPred.ProofMode.MGoal.assumption (goal : MGoal) : OptionT
   if let some _ := parseEmptyHyp? goal.hyps then
     failure
   if let some hyp := parseHyp? goal.hyps then
+    dbg_trace s!"DBG[29]: Assumption.lean:21: hyp={(hyp.name, hyp.uniq)}"
     guard (← isDefEq hyp.p goal.target)
     return mkApp2 (mkConst ``SPred.entails.refl) goal.σs hyp.p
   if let some (σs, lhs, rhs) := parseAnd? goal.hyps then
