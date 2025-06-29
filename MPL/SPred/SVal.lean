@@ -38,6 +38,8 @@ instance : Inhabited (StateTuple []) where
 instance [Inhabited σ] [Inhabited (StateTuple σs)] : Inhabited (StateTuple (σ :: σs)) where
   default := (default, default)
 
+theorem append {σs σs' α} : SVal (σs ++ σs') α = SVal σs (SVal σs' α) := by sorry
+
 /-- Curry a function taking a `StateTuple` into an `SVal`. -/
 def curry {σs : List Type} (f : StateTuple σs → α) : SVal σs α := match σs with
 | [] => f ()

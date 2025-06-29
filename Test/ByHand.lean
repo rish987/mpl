@@ -6,6 +6,46 @@ import Test.Code
 namespace MPL.Test.Toy
 open MPL Test.Code
 
+@[spec]
+theorem Specs.get_StateT' [Monad m] [WPMonad m psm] :
+  ⦃fun s => Q.1 s s⦄ (MonadState.get : StateT σ m σ) ⦃Q⦄ := by sorry
+
+axiom I : StateM Nat Unit
+axiom F : StateM Nat Unit
+axiom G : StateM Nat Unit
+axiom P : Assertion (PostShape.arg Nat PostShape.pure)
+axiom Q: PostCond Unit (PostShape.arg Nat PostShape.pure)
+@[spec]
+axiom hI : ⦃⌜True⌝⦄ I ⦃⇓ _ => P⦄
+@[spec]
+axiom hF : ⦃P⦄ F ⦃Q⦄
+@[spec]
+axiom hG : ⦃P⦄ G ⦃Q⦄
+
+
+@[inline] noncomputable def test_ite : StateM Nat Unit := do
+  I
+  let n ← get
+  if n < 1 then
+    F
+  else
+    G
+
+theorem ex : ⦃⌜True⌝⦄ test_ite ⦃Q⦄ := by
+  unfold test_ite
+  mintro _
+  mvcgen
+  -- sorry -- left with two unsolvable goals
+  -- sorry
+
+theorem ex_patched : ⦃⌜True⌝⦄ test_ite ⦃Q⦄ := by
+  unfold test_ite
+  mintro _
+  mspec
+  mspec
+  mintro ∀s
+  split <;> mvcgen
+
 set_option grind.warning false
 
 theorem sum_loop_spec :

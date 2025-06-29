@@ -206,6 +206,7 @@ where
     forallTelescope goal fun xs body => do
       let res ← try mStart body catch _ =>
         return ← mkLambdaFVars xs (← emitVC goal name)
+      trace[mpl.tactics.spec] "HERE: {name}, {body}"
       let mut prf ← onGoal res.goal name
       -- logInfo m!"tryGoal: {res.goal.toExpr}"
       -- res.goal.checkProof prf
@@ -224,7 +225,7 @@ where
 
   onGoal goal name : VCGenM Expr := do
     let T := goal.target
-    let T := (← reduceProjBeta? T).getD T -- very slight simplification
+    let T ← processAppAssertion ((← reduceProjBeta? T).getD T) -- very slight simplification
     -- logInfo m!"target: {T}"
     let goal := { goal with target := T }
 
@@ -378,9 +379,9 @@ abbrev fib_spec : Nat → Nat
 | 1 => 1
 | n+2 => fib_spec n + fib_spec (n+1)
 
+set_option trace.mpl.tactics.spec true in
 theorem fib_triple_vc : ⦃⌜True⌝⦄ fib_impl n ⦃⇓ r => r = fib_spec n⦄ := by
   unfold fib_impl
-  -- set_option trace.mpl.tactics.spec true in
   mvcgen
   case inv => exact ⇓ (⟨a, b⟩, xs) =>
     a = fib_spec xs.rpref.length ∧ b = fib_spec (xs.rpref.length + 1)

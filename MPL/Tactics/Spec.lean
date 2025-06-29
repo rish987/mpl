@@ -31,7 +31,12 @@ def findSpec (database : SpecTheorems) (prog : Expr) : MetaM SpecTheorem := do
   let specs ← candidates.filterM fun spec => do
     let (_, _, _, type) ← spec.proof.instantiate
     trace[mpl.tactics.spec] "{spec.proof} instantiates to {type}"
-    let_expr Triple _m _ps _instWP _α specProg _P _Q := type | throwError "Not a triple: {repr type}"
+    let specProg : Expr ← do
+      let_expr Triple _m _ps _instWP _α specProg _P _Q := type 
+        | let_expr AppTriple _m _ps _σs _σs' _inst _α specProg _P _Q _hps _ts := type
+            | throwError "Not a triple: {repr type}"
+          pure specProg
+      pure specProg
     isDefEq prog specProg
   trace[mpl.tactics.spec] "Specs for {prog}: {specs.map (·.proof)}"
   if specs.isEmpty then throwError m!"No specs found for {indentExpr prog}\nCandidates: {candidates.map (·.proof)}"
@@ -79,7 +84,7 @@ def elabSpec (stx? : Option (TSyntax `term)) (wp : Expr) : TacticM (SpecTheorem 
   | none => pure (← findSpec (← getSpecTheorems) prog, [])
   | some stx => Term.withSynthesize (elabTermIntoSpecTheorem stx expectedTy)
 
-variable {n} [Monad n] [MonadControlT MetaM n] [MonadLiftT MetaM n]
+variable {n} [Monad n] [MonadControlT MetaM n] [MonadLiftT MetaM n] [MonadMCtx n] [MonadTrace n] [MonadOptions n] [MonadRef n] [AddMessageContext n]
 
 mutual
 partial def dischargePostEntails (α : Expr) (ps : Expr) (Q : Expr) (Q' : Expr) (goalTag : Name) (resultName : Name) (discharge : Expr → Name → n Expr) : n Expr := do
@@ -143,12 +148,24 @@ def mkPreTag (goalTag : Name) : Name := Id.run do
   let some n := (s.toSubstring.drop 3).toString.toNat? | return dflt
   return .str p ("pre" ++ toString (n + 1))
 
+def processAppAssertion (P : Expr) : n Expr := do
+  let_expr MPL.AppAssertion _ps _σs _σs' P _hps ts := P | pure P
+  let mut ts := ts
+  let mut tsArr := #[]
+  while true do
+    let_expr Prod.mk _ _ t newts := ts | break
+    tsArr := tsArr.push t
+    ts := newts
+  let newP := mkAppN P tsArr
+  pure newP 
+
 /--
   Returns the proof and the list of new unassigned MVars.
 -/
 def mSpec (goal : MGoal) (elabSpecAtWP : Expr → n (SpecTheorem × List MVarId)) (discharge : Expr → Name → n Expr) (goalTag : Name) (mkPreTag := mkPreTag) (resultName := `r) : n (Expr × List MVarId) := do
   -- First instantiate `fun s => ...` in the target via repeated `mintro ∀s`.
   let (holes, prf) ← mIntroForallN goal goal.target.consumeMData.getNumHeadLambdas fun goal => do
+    let goal := {goal with target := ← processAppAssertion goal.target} 
     -- Elaborate the spec for the wp⟦e⟧ app in the target
     let T := goal.target.consumeMData
     unless T.getAppFn.constName! == ``PredTrans.apply do
@@ -175,16 +192,46 @@ def mSpec (goal : MGoal) (elabSpecAtWP : Expr → n (SpecTheorem × List MVarId)
     let T := goal.target.consumeMData
     let args := T.getAppArgs
     let Q' := args[3]!
-    let excessArgs := (args.extract 4 args.size).reverse
+    let excessArgs := args.extract 4 args.size
+    let rexcessArgs := excessArgs.reverse
 
     -- Actually instantiate the specThm using the expected type computed from `wp`.
-    let_expr f@Triple m ps instWP α prog P Q := specTy | do liftMetaM (throwError "target not a Triple application {specTy}")
+    let (f, m, ps, instWP, α, prog, P, Q, appData?) ← do
+      let_expr f@Triple m ps instWP α prog P Q := specTy
+        | do let_expr f@AppTriple m ps σs σs' instWP α prog P Q hps ts := specTy
+               | do liftMetaM (throwError "target not a Triple application {specTy}")
+          pure (f, m, ps, instWP, α, prog, P, Q, .some (σs, σs', hps, ts))
+      pure (f, m, ps, instWP, α, prog, P, Q, none)
     let wp' := mkApp5 (mkConst ``WP.wp f.constLevels!) m ps instWP α prog
     unless (← withAssignableSyntheticOpaque <| isDefEq wp wp') do
       Term.throwTypeMismatchError none wp wp' spec
 
-    let P := P.betaRev excessArgs
-    let spec := spec.betaRev excessArgs
+    let P := P.betaRev rexcessArgs
+    let spec ←
+      if let some (Mσs, Mσs', Mhps, Mts) := appData? then do
+        let psArgs := mkApp (mkConst ``PostShape.args) ps
+        let psArgsType ← inferType psArgs
+        let psArgsLvl ← getLevel psArgsType
+
+        let one := .succ .zero
+        let σs ← rexcessArgs.foldlM (init := mkApp (mkConst ``List.nil [one]) (Expr.sort one)) fun acc arg => do
+          let argType ← inferType arg
+          pure <| mkApp3 (mkConst ``List.cons [one]) (Expr.sort one) argType acc
+        let σs' := rexcessArgs.foldl (init := psArgs) fun acc _ => mkApp2 (mkConst ``List.tail [one]) (Expr.sort one) acc
+
+        let hps := mkApp2 (mkConst ``Eq.refl [psArgsLvl]) psArgsType psArgs
+        let (ts, _) ← rexcessArgs.foldlM (init := (mkConst ``Unit.unit, .zero, mkConst ``Unit)) fun (acc, v, β) arg => do
+          let argType ← inferType arg
+          let .succ argLvl ← getLevel argType | liftMetaM (throwError "unexpected state type universe level")
+          pure (mkApp4 (mkConst ``Prod.mk [argLvl, v]) argType β arg acc, .max argLvl v, mkApp2 (mkConst ``Prod [argLvl, v]) argType β)
+
+        Mσs.mvarId!.assign σs
+        Mσs'.mvarId!.assign σs'
+        Mhps.mvarId!.assign hps
+        Mts.mvarId!.assign ts
+        pure spec
+      else
+        pure $ spec.betaRev rexcessArgs
 
     -- often P or Q are schematic (i.e. an MVar app). Try to solve by rfl.
     let P ← instantiateMVarsIfMVarApp P
@@ -213,8 +260,8 @@ def mSpec (goal : MGoal) (elabSpecAtWP : Expr → n (SpecTheorem × List MVarId)
       let QQ' ← dischargePostEntails α ps Q Q' tag resultName discharge
       let QQ'mono := mkApp6 (mkConst ``PredTrans.mono) ps α wp Q Q' QQ'
       postPrf := fun h =>
-        mkApp6 (mkConst ``SPred.entails.trans) goal.σs P (wpApplyQ.betaRev excessArgs) (wpApplyQ'.betaRev excessArgs)
-          h (QQ'mono.betaRev excessArgs)
+        mkApp6 (mkConst ``SPred.entails.trans) goal.σs P (wpApplyQ.betaRev rexcessArgs) (wpApplyQ'.betaRev rexcessArgs)
+          h (QQ'mono.betaRev rexcessArgs)
 
     -- finally build the proof; HPPrf.trans (spec.trans QQ'mono)
     let prf := prePrf (postPrf spec)

@@ -25,9 +25,14 @@ variable {m : Type → Type u} {ps : PostShape}
 def Triple [WP m ps] {α} (x : m α) (P : Assertion ps) (Q : PostCond α ps) : Prop :=
   P ⊢ₛ wp⟦x⟧ Q
 
+def AppTriple [WP m ps] {α} (x : m α) (P : Assertion ps) (Q : PostCond α ps) (hps : ps.args = σs ++ σs') (ts : SVal.StateTuple σs) : Prop :=
+  have : SPred ps.args = SPred (σs ++ σs') := by congr
+  SPred.entails.apply (cast this P) (cast this (wp⟦x⟧ Q)) ts
+
 namespace Triple
 
 notation:lead "⦃" P "⦄ " x:lead " ⦃" Q "⦄" => Triple x spred(P) spred(Q)
+notation:lead "A⦃" P "⦄ " x:lead " ⦃" Q "⦄ " ts ";" hps => AppTriple x spred(P) spred(Q) hps ts -- FIXME metter notation
 app_unexpand_rule Triple
   | `($_ $x $P $Q) => match Q with
     | `(⇓ $xs* => $e) => do
@@ -37,6 +42,15 @@ app_unexpand_rule Triple
 
 instance [WP m ps] (x : m α) : PropAsSPredTautology (Triple x P Q) spred(P → wp⟦x⟧ Q) where
   iff := (SPred.entails_true_intro P (wp⟦x⟧ Q)).symm
+
+-- instance [PropAsSPredTautology P spred(Q)] [PropAsSPredTautology (⊢ₛ spred(Q)) spred(R)] : PropAsSPredTautology P spred(R) where
+--   iff := sorry
+
+instance [WP m ps] (x : m α) : PropAsSPredTautology (AppTriple x P Q hps ts) spred(AppAssertion P hps ts → AppAssertion (wp⟦x⟧ Q) hps ts) where
+  iff := sorry
+
+-- instance [WP m ps] (x : m α) : PropAsSPredTautology (⊢ₛ spred(AppAssertion P hps ts → AppAssertion (wp⟦x⟧ Q) hps (t, ts))) spred(AppAssertion (P t) hps ts → AppAssertion (wp⟦x⟧ Q) hps ts) where
+-- --   iff := sorry
 
 theorem pure [Monad m] [WPMonad m ps] {α} {Q : PostCond α ps} (a : α) (himp : P ⊢ₛ Q.1 a) :
   ⦃P⦄ pure (f:=m) a ⦃Q⦄ := himp.trans (by simp only [WPMonad.wp_pure, PredTrans.pure_apply, SPred.entails.refl])

@@ -56,7 +56,15 @@ instance : ToMessageData SpecProof where
     | .local fvarId => m!"SpecProof.local {mkFVar fvarId}"
     | .stx _ ref proof => m!"SpecProof.stx _ {ref} {proof}"
 
+-- structure SpecTheorem.AppData where
+-- σs : Expr
+-- σs' : Expr
+-- hps : Expr
+-- ts : Expr
+-- deriving Inhabited, BEq
+
 structure SpecTheorem where
+  -- appData? : Option SpecTheorem.AppData
   keys : Array DiscrTree.Key
   /--
   Expr key tested for matching, in ∀-quantified form.
@@ -156,8 +164,11 @@ private def mkSpecTheorem (type : Expr) (proof : SpecProof) (prio : Nat) : MetaM
   withNewMCtxDepth do
   let (xs, _, type) ← withSimpGlobalConfig (forallMetaTelescopeReducing type)
   let type ← whnfR type
-  let_expr Triple _m ps _inst _α prog P _Q := type
-    | throwError "unexpected kind of spec theorem; not a triple{indentExpr type}"
+  let (ps, prog, P) ← do
+    let_expr Triple _m ps _inst _α prog P _Q := type
+      | do let_expr AppTriple _m ps _σs _σs' _inst _α prog P _Q _hps _ts := type | throwError "unexpected kind of spec theorem; not a triple{indentExpr type}"
+        pure (ps, prog, P)
+    pure (ps, prog, P)
   let keys ← DiscrTree.mkPath prog (noIndexAtArgs := false)
   -- beta potential of `P` describes how many times we want to `mintro ∀s`, that is,
   -- *eta*-expand the goal.

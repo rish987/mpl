@@ -72,10 +72,11 @@ end List
 /-! # If/Then/Else -/
 
 @[spec]
-theorem Specs.ite {α m ps} {P : Assertion ps} {Q : PostCond α ps} (c : Prop) [Decidable c] [WP m ps] (t : m α) (e : m α)
-    (ifTrue : c → ⦃P⦄ t ⦃Q⦄) (ifFalse : ¬c → ⦃P⦄ e ⦃Q⦄) :
-    ⦃P⦄ if c then t else e ⦃Q⦄ := by
+theorem Specs.ite {α m ps} {P : Assertion ps} {Q : PostCond α ps} (hps : ps.args = σs ++ σs') (ts : SVal.StateTuple σs) (c : Prop) [Decidable c] [WP m ps] (t : m α) (e : m α)
+    (ifTrue : c → A⦃P⦄ t ⦃Q⦄ ts ; hps) (ifFalse : ¬c → A⦃P⦄ e ⦃Q⦄ ts ; hps) :
+    A⦃P⦄ if c then t else e ⦃Q⦄ ts ; hps := by
   split <;> apply_rules
+
 
 @[spec]
 theorem Specs.dite {α m ps} {P : Assertion ps} {Q : PostCond α ps} (c : Prop) [Decidable c] [WP m ps] (t : c → m α) (e : ¬ c → m α)

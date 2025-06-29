@@ -61,6 +61,27 @@ abbrev PostShape.args : PostShape → List Type
 abbrev Assertion (ps : PostShape) : Type :=
   SPred (PostShape.args ps)
 
+@[simp]
+def AppAssertion (P : Assertion ps) (hps : ps.args = σs ++ σs') (ts : SVal.StateTuple σs) : SPred σs' :=
+  have : SPred ps.args = SPred (σs ++ σs') := by congr
+  let P' := cast (this.trans SVal.append) P
+  (@SVal.uncurry (SPred σs') σs P' ts)
+
+-- def Assertion.cons  (P : Assertion ps) (hps : ps.args = (σ :: σs) ++ σs') : (σ → SPred (σs ++ σs')) := by
+--   unfold Assertion at P
+--   rw [hps] at P
+--   simp only [List.cons_append] at P
+--   unfold SPred at *
+--   unfold SVal at P
+--   exact P
+
+-- theorem AppAssertion.cons (P : Assertion ps) (hps : ps.args = (σ :: σs) ++ σs') (t : σ) (ts : SVal.StateTuple σs) :
+--    AppAssertion P hps (t, ts)
+--    = AppAssertion (σs := σs) (σs' := σs') (P t) sorry ts := by sorry
+--   have : SPred ps.args = SPred (σs ++ σs') := by congr
+--   let P' := cast (this.trans SVal.append) P
+--   (@SVal.uncurry (SPred σs') σs P' ts)
+
 /--
   Encodes one continuation barrel for each `PostShape.except` in the given predicate shape.
   ```

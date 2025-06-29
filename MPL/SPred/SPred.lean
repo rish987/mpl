@@ -39,6 +39,13 @@ def entails {σs : List Type} (P Q : SPred σs) : Prop := match σs with
 theorem entails_cons {σs : List Type} {P Q : SPred (σ::σs)} : entails P Q = (∀ s, entails (P s) (Q s)) := rfl
 theorem entails_cons_intro {σs : List Type} {P Q : SPred (σ::σs)} : (∀ s, entails (P s) (Q s)) → entails P Q := by simp only [entails, imp_self]
 
+def entails.apply {σs σs'} (P Q : SPred (σs ++ σs')) (ts : SVal.StateTuple σs) : Prop :=
+  let P' : SPred σs' := SVal.uncurry (cast SVal.append P) ts
+  let Q' : SPred σs' := SVal.uncurry (cast SVal.append Q) ts
+  entails P' Q'
+
+theorem entails.imp_apply {σs σs'} {P Q : SPred (σs ++ σs')} (h : entails P Q) (ts : SVal.StateTuple σs) : entails.apply P Q ts := sorry
+
 -- Reducibility of entails must be semi-reducible so that entails_refl is useful for rfl
 
 /-- Equivalence relation on `SPred`. Convert to `Eq` via `bientails.to_eq`. -/
